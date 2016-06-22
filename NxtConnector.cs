@@ -27,8 +27,7 @@ namespace Southxchange.Nxt
     /// using this in a production environmnent.
     /// 
     /// About this implementation:
-    /// * I was not sure if ListTransactions() should return ALL transactions, or just those for addresses on this wallet, so I just those in the wallet.
-    /// * GetTransactionFees will return fees for that specific transaction, but there is also a deposit fee which is currently not communicated through
+    /// * GetTransactionFees will return fees for the requested transaction, but there is also a deposit fee which is currently not communicated through
     ///   the IConnector interface. As soon as a new deposit is found, when calling ListTransactions(), that account is drained on all funds and sent
     ///   to what I call a "main account". This main account is used for withdrawals, and is not to be confused with regular user deposit accounts.
     /// 
@@ -37,8 +36,8 @@ namespace Southxchange.Nxt
     ///   walletfile and/or other unexpected problems.
     /// * The wallet file is *NOT* encrypted
     /// * Phased transactions is not yet supported, they are rather uncommon and must for now, be handled manually.
-    /// * Unconfirmed transactions will not show up, however, blocktimes much faster than in bitcoin (are rarely > 90 seconds)
-    ///   so this is not as severe.
+    /// * Unconfirmed transactions is not supported, however, blocktimes are 60 seconds in NXT and rarely go above 90 seconds.
+    ///   So this is not as severe as it would be with bitcoin.
     /// * Exception handling is needed, what if the NXT server becomes unreachable? As it is now, most exceptions are thrown to calling method.
     /// * Not tested for performance with many addresses (large wallet file) nor heavy load.
     /// </summary>
@@ -47,11 +46,11 @@ namespace Southxchange.Nxt
         private readonly NxtWalletFile walletFile;
         private readonly NxtLib.ServiceFactory serviceFactory;
         private readonly NxtLib.Amount Fee = NxtLib.Amount.OneNxt;
+        private readonly NxtAccount mainAccount;
+        private readonly List<NxtAccount> depositAccounts;
+
         private Action<string> logger;
-
-        private NxtAccount mainAccount;
-        private List<NxtAccount> depositAccounts;
-
+        
         /// <summary>
         /// Constructor for NxtConnector
         /// </summary>
@@ -62,6 +61,8 @@ namespace Southxchange.Nxt
             serviceFactory = new NxtLib.ServiceFactory(serverAddress);
             walletFile = new NxtWalletFile(walletFilePath);
             InitWalletFile();
+            mainAccount = walletFile.GetMainAccount();
+            depositAccounts = walletFile.GetAllDepositAccounts();
         }
 
         /// <summary>
@@ -100,7 +101,7 @@ namespace Southxchange.Nxt
             var serverInfoService = serviceFactory.CreateServerInfoService();
             var accountService = serviceFactory.CreateAccountService();
 
-            var totalBalance = accountService.GetBalance(mainAccount.Address).Result.Balance.Nxt;
+            var mainAccountBalance = accountService.GetBalance(mainAccount.Address).Result.Balance.Nxt;
             var getPeersReply = networkingService.GetPeers(PeersLocator.ByState(PeerInfo.PeerState.Connected)).Result;
             var blockchainStatus = serverInfoService.GetBlockchainStatus().Result;
 
@@ -108,7 +109,7 @@ namespace Southxchange.Nxt
             {
                 Connections = getPeersReply.PeerList.Count,
                 LastBlock = blockchainStatus.NumberOfBlocks - 1, // equals "height" in NXT, which is the usual measure
-                Reserves = totalBalance,
+                Reserves = mainAccountBalance,
                 Version = blockchainStatus.Version
             };
 
@@ -343,8 +344,6 @@ namespace Southxchange.Nxt
                 walletFile.InitNewFile(GenerateNewAccount());
             }
 
-            mainAccount = walletFile.GetMainAccount();
-            depositAccounts = walletFile.GetAllAccounts(false);
         }
 
         private NxtAccount GenerateNewAccount()
