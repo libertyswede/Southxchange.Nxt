@@ -80,8 +80,13 @@ namespace Southxchange.Nxt
 
         private static void WriteGenerateAddress()
         {
-            var address = connector.GenerateAddress();
-            Console.WriteLine($"Generated Address: {address}");
+            Console.Write("How many addresses do you want to generate: ");
+            var count = int.Parse(Console.ReadLine());
+            for (int i = 0; i < count; i++)
+            {
+                var address = connector.GenerateAddress();
+                Console.WriteLine($"Generated Address: {address}");
+            }
         }
 
         private static void WriteIsAddressValid()
