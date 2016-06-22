@@ -102,14 +102,14 @@ namespace Southxchange.Nxt
 
             var totalBalance = accountService.GetBalance(mainAccount.Address).Result.Balance.Nxt;
             var getPeersReply = networkingService.GetPeers(PeersLocator.ByState(PeerInfo.PeerState.Connected)).Result;
-            var getStateReply = serverInfoService.GetState().Result;
+            var blockchainStatus = serverInfoService.GetBlockchainStatus().Result;
 
             var info = new Info
             {
                 Connections = getPeersReply.PeerList.Count,
-                LastBlock = getStateReply.NumberOfBlocks - 1, // equals "height" in NXT, which is the usual measure
+                LastBlock = blockchainStatus.NumberOfBlocks - 1, // equals "height" in NXT, which is the usual measure
                 Reserves = totalBalance,
-                Version = getStateReply.Version
+                Version = blockchainStatus.Version
             };
 
             logger.Invoke("Done with get info");
@@ -204,7 +204,7 @@ namespace Southxchange.Nxt
             var blockTimes = new Dictionary<ulong, DateTime>();
             logger.Invoke($"Will check {depositAccounts.Count} accounts for new transactions");
 
-            var lastBlock = serverInfoService.GetState().Result.LastBlockId;
+            var lastBlock = serverInfoService.GetBlockchainStatus().Result.LastBlockId;
             foreach (var account in depositAccounts)
             {
                 var done = false;
@@ -245,7 +245,7 @@ namespace Southxchange.Nxt
                         {
                             if (e is NxtLib.NxtException && e.Message == "Current last block is different")
                             {
-                                lastBlock = serverInfoService.GetState().Result.LastBlockId;
+                                lastBlock = serverInfoService.GetBlockchainStatus().Result.LastBlockId;
                                 return true;
                             }
                             return false;
