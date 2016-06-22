@@ -60,7 +60,7 @@ namespace Southxchange.Nxt
             return ParseAccounts(mainAccountString).Single();
         }
 
-        public List<NxtAccount> GetAllAccounts(bool includeMainAccount = true)
+        public List<NxtAccount> GetAllDepositAccounts()
         {
             string walletFileContent;
             lock (lockObject)
@@ -71,10 +71,7 @@ namespace Southxchange.Nxt
                 }
             }
             var accountList = ParseAccounts(walletFileContent);
-            if (!includeMainAccount)
-            {
-                accountList.RemoveAt(0);
-            }
+            accountList.RemoveAt(0);
             return accountList;
         }
 
@@ -108,13 +105,8 @@ namespace Southxchange.Nxt
             lock (lockObject)
             {
                 string[] arrLine = File.ReadAllLines(filepath);
-                using (var streamwriter = new StreamWriter(filepath))
+                using (var streamwriter = new StreamWriter(filepath, true))
                 {
-                    foreach (var line in arrLine)
-                    {
-                        streamwriter.WriteLine(line);
-                    }
-
                     WriteAccountToFileStream(account, streamwriter);
                 }
             }
