@@ -32,9 +32,8 @@ namespace Southxchange.Nxt
     ///   to what I call a "main account". This main account is used for withdrawals, and is not to be confused with regular user deposit accounts.
     /// 
     /// Limitations of this implementation:
-    /// * This implementation is not safe for multithreading, if multiple threads/tasks call these methods it could lead to corrupt 
-    ///   walletfile and/or other unexpected problems.
-    /// * The wallet file is *NOT* encrypted
+    /// * This implementation is not safe for multithreading, if multiple threads/tasks call these methods it could lead to deadlocks in the wallet 
+    ///   database and/or other unexpected problems.
     /// * Phased transactions is not yet supported, they are rather uncommon and must for now, be handled manually.
     /// * Unconfirmed transactions is not supported, however, blocktimes are 60 seconds in NXT and rarely go above 90 seconds.
     ///   So this is not as severe as it would be with bitcoin.
@@ -43,7 +42,7 @@ namespace Southxchange.Nxt
     /// </summary>
     class NxtConnector : IConnector
     {
-        private readonly NxtWalletFile walletFile;
+        private readonly NxtWalletDb walletDb;
         private readonly NxtLib.ServiceFactory serviceFactory;
         private readonly NxtLib.Amount Fee = NxtLib.Amount.OneNxt;
         private readonly NxtAccount mainAccount;
@@ -56,13 +55,14 @@ namespace Southxchange.Nxt
         /// </summary>
         /// <param name="walletFilePath">The wallet file path</param>
         /// <param name="serverAddress">Address to the nxt http api</param>
-        public NxtConnector(string walletFilePath, string serverAddress = Constants.DefaultNxtUrl)
+        /// <param name="walletKey">The key required to unlock the wallet file</param>
+        public NxtConnector(string walletFilePath, string walletKey, string serverAddress = Constants.DefaultNxtUrl)
         {
             serviceFactory = new NxtLib.ServiceFactory(serverAddress);
-            walletFile = new NxtWalletFile(walletFilePath);
+            walletDb = new NxtWalletDb(walletFilePath, walletKey);
             InitWalletFile();
-            mainAccount = walletFile.GetMainAccount();
-            depositAccounts = walletFile.GetAllDepositAccounts();
+            mainAccount = walletDb.GetMainAccount();
+            depositAccounts = walletDb.GetAllDepositAccounts();
         }
 
         /// <summary>
@@ -83,7 +83,7 @@ namespace Southxchange.Nxt
             logger.Invoke("Starting to generate new address");
 
             var account = GenerateNewAccount();
-            walletFile.AddAccountToFile(account);
+            walletDb.AddAccount(account);
             depositAccounts.Add(account);
 
             logger.Invoke($"Done with generating new address, {account.Address}");
@@ -270,7 +270,7 @@ namespace Southxchange.Nxt
                 }
             }
 
-            walletFile.UpdateLastBlockIds(depositAccounts);
+            walletDb.UpdateLastBlockIds(depositAccounts);
 
             logger.Invoke($"Done with list transactions at {DateTime.Now}");
             return transactions;
@@ -339,11 +339,12 @@ namespace Southxchange.Nxt
 
         private void InitWalletFile()
         {
-            if (!walletFile.FileExists())
+            if (!walletDb.FileExists())
             {
-                walletFile.InitNewFile(GenerateNewAccount());
+                var mainAccount = GenerateNewAccount();
+                mainAccount.IsMainAccount = true;
+                walletDb.InitNewDb(mainAccount);
             }
-
         }
 
         private NxtAccount GenerateNewAccount()
@@ -356,6 +357,7 @@ namespace Southxchange.Nxt
 
             var account = new NxtAccount
             {
+                IsMainAccount = false,
                 Address = accountWithPublicKey.AccountRs,
                 LastKnownBlockId = Constants.GenesisBlockId,
                 PublicKey = accountWithPublicKey.PublicKey.ToString(),

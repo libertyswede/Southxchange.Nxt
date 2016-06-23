@@ -8,13 +8,14 @@ namespace Southxchange.Nxt
     class Program
     {
         private static string logfile = @"c:\temp\southxchange\log.txt";
-        private static string walletfile = @"c:\temp\southxchange\nxtwallet.txt";
+        private static string walletfile = @"c:\temp\southxchange\nxtwallet.db";
+        private const string walletPassword = "";
         private static IConnector connector;
 
         static void Main(string[] args)
         {
             Console.WriteLine("Welcome to the Southxchange Nxt Integration Program!");
-            connector = new NxtConnector(walletfile, Constants.TestnetNxtUrl);
+            connector = new NxtConnector(walletfile, walletPassword, Constants.TestnetNxtUrl);
             connector.SetLogger(DoLog);
 
             WriteMenu();
