@@ -34,11 +34,7 @@ namespace Southxchange.Nxt
     /// Limitations of this implementation:
     /// * This implementation is not safe for multithreading, if multiple threads/tasks call these methods it could lead to deadlocks in the wallet 
     ///   database and/or other unexpected problems.
-    /// * Phased transactions is not yet supported, they are rather uncommon and must for now, be handled manually.
-    /// * Unconfirmed transactions is not supported, however, blocktimes are 60 seconds in NXT and rarely go above 90 seconds.
-    ///   So this is not as severe as it would be with bitcoin.
     /// * Exception handling is needed, what if the NXT server becomes unreachable? As it is now, most exceptions are thrown to calling method.
-    /// * Not tested for performance with many addresses (large wallet file) nor heavy load.
     /// </summary>
     class NxtConnector : IConnector
     {
@@ -48,7 +44,6 @@ namespace Southxchange.Nxt
         private readonly NxtAccount mainAccount;
         private readonly List<NxtAddress> depositAddresses;
         private ulong lastBlockId;
-
         private Action<string> logger;
         
         /// <summary>
@@ -86,7 +81,7 @@ namespace Southxchange.Nxt
 
             var account = GenerateNewAccount();
             walletDb.AddAccount(account);
-            depositAddresses.Add(account);
+            depositAddresses.Add(new NxtAddress { Id = account.Id, Address = account.Address });
 
             logger.Invoke($"Done with generating new address, {account.Address}");
             return account.Address;
@@ -235,42 +230,16 @@ namespace Southxchange.Nxt
                 var nxtTransactions = block.Transactions.Where(t => addressesSet.Contains(t.RecipientRs) && !t.Phased)
                     .Union(block.ExecutedPhasedTransactions.Where(t => addressesSet.Contains(t.RecipientRs)))
                     .Where(t => t.Amount.Nqt > 0);
-
-                foreach (var nxtTransaction in nxtTransactions)
-                {
-                    logger.Invoke($"New incoming transaction ({nxtTransaction.TransactionId}), {nxtTransaction.Amount.Nxt} NXT was sent to {nxtTransaction.RecipientRs}");
-                    var transaction = new Transaction
-                    {
-                        Address = nxtTransaction.RecipientRs,
-                        Amount = nxtTransaction.Amount.Nxt,
-                        Confirmed = nxtTransaction.Confirmations.HasValue,
-                        Confirmations = nxtTransaction.Confirmations.Value,
-                        TxId = nxtTransaction.TransactionId.ToString()
-                    };
-                    transactions.Add(transaction);
-                }
+                transactions.AddRange(MapTransactions(nxtTransactions));
                 previousBlockId = block.BlockId;
             }
-            var unconfirmedTransactions = transactionService.GetUnconfirmedTransactions(null, previousBlockId).Result;
 
-            foreach (var nxtTransaction in unconfirmedTransactions.UnconfirmedTransactions.Where(t => addressesSet.Contains(t.RecipientRs) && !t.Phased))
-            {
-                logger.Invoke($"New incoming transaction ({nxtTransaction.TransactionId}), {nxtTransaction.Amount.Nxt} NXT was sent to {nxtTransaction.RecipientRs}");
-                var transaction = new Transaction
-                {
-                    Address = nxtTransaction.RecipientRs,
-                    Amount = nxtTransaction.Amount.Nxt,
-                    Confirmed = false,
-                    Confirmations = 0,
-                    TxId = nxtTransaction.TransactionId.ToString()
-                };
-                transactions.Add(transaction);
-            }
+            var unconfirmedTransactions = transactionService.GetUnconfirmedTransactions().Result.UnconfirmedTransactions
+                .Where(t => addressesSet.Contains(t.RecipientRs) && !t.Phased);
+            transactions.AddRange(MapTransactions(unconfirmedTransactions));
 
             if (transactions.Any())
             {
-                logger.Invoke("Found some new deposits, will transfer funds to main account");
-
                 var transactionsByAddress = transactions
                     .Where(t => t.Confirmed)
                     .GroupBy(t => t.Address)
@@ -381,6 +350,23 @@ namespace Southxchange.Nxt
             };
 
             return account;
+        }
+
+        private IEnumerable<Transaction> MapTransactions(IEnumerable<NxtLib.Transaction> nxtTransactions)
+        {
+            foreach (var nxtTransaction in nxtTransactions)
+            {
+                logger.Invoke($"New incoming transaction ({nxtTransaction.TransactionId}), {nxtTransaction.Amount.Nxt} NXT was sent to {nxtTransaction.RecipientRs}");
+                var transaction = new Transaction
+                {
+                    Address = nxtTransaction.RecipientRs,
+                    Amount = nxtTransaction.Amount.Nxt,
+                    Confirmed = nxtTransaction.Confirmations.HasValue,
+                    Confirmations = nxtTransaction.Confirmations ?? 0,
+                    TxId = nxtTransaction.TransactionId.ToString()
+                };
+                yield return transaction;
+            }
         }
 
         private void SendToInternal(string address, decimal balance, string secretPhrase)
