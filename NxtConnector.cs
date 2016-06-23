@@ -45,7 +45,8 @@ namespace Southxchange.Nxt
         private readonly List<NxtAddress> depositAddresses;
         private ulong lastBlockId;
         private Action<string> logger;
-        
+        private bool isLocked = true;
+
         /// <summary>
         /// Constructor for NxtConnector
         /// </summary>
@@ -270,6 +271,12 @@ namespace Southxchange.Nxt
         public string SendTo(string address, decimal amount)
         {
             logger.Invoke($"Starting to send {amount} NXT to {address}");
+
+            if (isLocked)
+            {
+                throw new InvalidOperationException("Wallet is locked");
+            }
+
             var accountService = serviceFactory.CreateAccountService();
             var balance = accountService.GetBalance(mainAccount.Address).Result.Balance.Nxt;
 
@@ -291,7 +298,7 @@ namespace Southxchange.Nxt
         /// </summary>
         public void Lock()
         {
-            throw new NotImplementedException();
+            isLocked = true;
         }
 
         /// <summary>
@@ -300,7 +307,11 @@ namespace Southxchange.Nxt
         /// <param name="key">Current key</param>
         public void Unlock(string key)
         {
-            throw new NotImplementedException();
+            if (!walletDb.EncryptionKeyEquals(key))
+            {
+                throw new ArgumentException("Wrong key", nameof(key));
+            }
+            isLocked = false;
         }
 
         /// <summary>

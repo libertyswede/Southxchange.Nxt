@@ -135,6 +135,11 @@ namespace Southxchange.Nxt
             }
         }
 
+        public bool EncryptionKeyEquals(string keyToTest)
+        {
+            return string.Equals(encryptionKey, keyToTest);
+        }
+
         public bool IsEncrypted()
         {
             try

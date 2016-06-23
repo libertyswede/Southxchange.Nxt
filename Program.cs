@@ -9,13 +9,14 @@ namespace Southxchange.Nxt
     {
         private static string logfile = @"c:\temp\southxchange\log.txt";
         private static string walletfile = @"c:\temp\southxchange\nxtwallet.db";
-        private const string walletPassword = "";
+        private const string walletKey = "";
         private static IConnector connector;
 
         static void Main(string[] args)
         {
             Console.WriteLine("Welcome to the Southxchange Nxt Integration Program!");
-            connector = new NxtConnector(walletfile, walletPassword, Constants.TestnetNxtUrl);
+            connector = new NxtConnector(walletfile, walletKey, Constants.TestnetNxtUrl);
+            connector.Unlock(walletKey);
             connector.SetLogger(DoLog);
 
             WriteMenu();
@@ -36,7 +37,9 @@ namespace Southxchange.Nxt
                 Console.WriteLine("7) Ping");
                 Console.WriteLine("8) Is Encrypted");
                 Console.WriteLine("9) Change Key");
-                Console.WriteLine("10) Quit");
+                Console.WriteLine("10) Lock");
+                Console.WriteLine("11) Unlock");
+                Console.WriteLine("12) Quit");
                 Console.Write("> ");
 
                 var value = int.Parse(Console.ReadLine());
@@ -70,6 +73,12 @@ namespace Southxchange.Nxt
                         break;
                     case 9:
                         WriteChangeKey();
+                        break;
+                    case 10:
+                        WriteLock();
+                        break;
+                    case 11:
+                        WriteUnLock();
                         break;
                     default:
                         done = true;
@@ -165,6 +174,27 @@ namespace Southxchange.Nxt
             Console.Write("Enter new key: ");
             var newKey = Console.ReadLine();
             connector.ChangeKey(key, newKey);
+        }
+
+        private static void WriteLock()
+        {
+            connector.Lock();
+            Console.WriteLine("Wallet is now locked!");
+        }
+
+        private static void WriteUnLock()
+        {
+            Console.Write("Enter key to unlock: ");
+            var key = Console.ReadLine();
+            try
+            {
+                connector.Unlock(key);
+                Console.WriteLine("Wallet is now unlocked!");
+            }
+            catch (ArgumentException e)
+            {
+                Console.WriteLine($"Failed to unlock wallet: {e.Message}");
+            }
         }
 
         public static void DoLog(string logString)
