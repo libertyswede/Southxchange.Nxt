@@ -101,7 +101,7 @@ namespace Southxchange.Nxt
             var serverInfoService = serviceFactory.CreateServerInfoService();
             var accountService = serviceFactory.CreateAccountService();
 
-            var mainAccountBalance = accountService.GetBalance(mainAccount.Address).Result.Balance.Nxt;
+            var mainAccountBalance = accountService.GetBalance(mainAccount.Address).Result.UnconfirmedBalance.Nxt;
             var getPeersReply = networkingService.GetPeers(PeersLocator.ByState(PeerInfo.PeerState.Connected)).Result;
             var blockchainStatus = serverInfoService.GetBlockchainStatus().Result;
 
