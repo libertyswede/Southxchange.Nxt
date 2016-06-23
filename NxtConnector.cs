@@ -231,7 +231,12 @@ namespace Southxchange.Nxt
                     hasMoreBlocks = false;
                     break;
                 }
-                foreach (var nxtTransaction in block.Transactions.Where(t => addressesSet.Contains(t.RecipientRs) && !t.Phased))
+
+                var nxtTransactions = block.Transactions.Where(t => addressesSet.Contains(t.RecipientRs) && !t.Phased)
+                    .Union(block.ExecutedPhasedTransactions.Where(t => addressesSet.Contains(t.RecipientRs)))
+                    .Where(t => t.Amount.Nqt > 0);
+
+                foreach (var nxtTransaction in nxtTransactions)
                 {
                     logger.Invoke($"New incoming transaction ({nxtTransaction.TransactionId}), {nxtTransaction.Amount.Nxt} NXT was sent to {nxtTransaction.RecipientRs}");
                     var transaction = new Transaction
@@ -246,15 +251,32 @@ namespace Southxchange.Nxt
                 }
                 previousBlockId = block.BlockId;
             }
+            var unconfirmedTransactions = transactionService.GetUnconfirmedTransactions(null, previousBlockId).Result;
+
+            foreach (var nxtTransaction in unconfirmedTransactions.UnconfirmedTransactions.Where(t => addressesSet.Contains(t.RecipientRs) && !t.Phased))
+            {
+                logger.Invoke($"New incoming transaction ({nxtTransaction.TransactionId}), {nxtTransaction.Amount.Nxt} NXT was sent to {nxtTransaction.RecipientRs}");
+                var transaction = new Transaction
+                {
+                    Address = nxtTransaction.RecipientRs,
+                    Amount = nxtTransaction.Amount.Nxt,
+                    Confirmed = false,
+                    Confirmations = 0,
+                    TxId = nxtTransaction.TransactionId.ToString()
+                };
+                transactions.Add(transaction);
+            }
 
             if (transactions.Any())
             {
                 logger.Invoke("Found some new deposits, will transfer funds to main account");
 
-                var transactionsByAddress = transactions.GroupBy(t => t.Address)
-                    .ToDictionary(grouping => grouping.Key, grouping => grouping.Sum(t => t.Amount));
+                var transactionsByAddress = transactions
+                    .Where(t => t.Confirmed)
+                    .GroupBy(t => t.Address)
+                    .ToDictionary(key => key.Key, elements => elements.Sum(t => t.Amount));
 
-                foreach (var transaction in transactionsByAddress)
+                foreach (var transaction in transactionsByAddress.Where(kvp => kvp.Value > Fee.Nxt))
                 {
                     var account = depositAddresses.Single(a => a.Address == transaction.Key);
                     logger.Invoke($"Will internally send {transaction.Value - Fee.Nxt} NXT from {account.Address} (deposit account) to {mainAccount.Address} (main account)");
