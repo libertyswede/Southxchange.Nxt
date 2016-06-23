@@ -200,17 +200,16 @@ namespace Southxchange.Nxt
         public List<Transaction> ListTransactions()
         {
             logger.Invoke($"Starting to list transactions at {DateTime.Now}");
-            var blockService = serviceFactory.CreateBlockService();
-            var transactionService = serviceFactory.CreateTransactionService();
-            var serverInfoService = serviceFactory.CreateServerInfoService();
-            var transactions = new List<Transaction>();
-            var blockTimes = new Dictionary<ulong, DateTime>();
             logger.Invoke($"Will check {depositAddresses.Count} accounts for new transactions");
 
+            var blockService = serviceFactory.CreateBlockService();
+            var transactionService = serviceFactory.CreateTransactionService();
+            var transactions = new List<Transaction>();
             var addressesSet = new HashSet<string>(depositAddresses.Select(a => a.Address));
             var height = blockService.GetBlock(BlockLocator.ByBlockId(lastBlockId)).Result.Height;
             var previousBlockId = lastBlockId;
             var hasMoreBlocks = true;
+
             while (hasMoreBlocks)
             {
                 height++;
