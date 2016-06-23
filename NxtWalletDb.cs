@@ -24,18 +24,18 @@ namespace Southxchange.Nxt
             return File.Exists(filepath);
         }
 
-        public void InitNewDb(NxtAccount mainAccount)
+        public void InitNewDb(NxtAccount mainAccount, ulong lastBlockId)
         {
             if (FileExists())
             {
                 return;
             }
-            CreateNewWalletFile(mainAccount);
+            CreateNewWalletFile(mainAccount, lastBlockId);
         }
 
         public NxtAccount GetMainAccount()
         {
-            var sql = "SELECT id, secret_phrase, address, public_key, last_block_id, main_account FROM account WHERE main_account = 1";
+            var sql = "SELECT id, secret_phrase, address, main_account FROM account WHERE main_account = 1";
             using (var dbConnection = OpenNewDbConnection())
             using (var command = new SQLiteCommand(sql, dbConnection))
             using (var reader = command.ExecuteReader())
@@ -46,10 +46,54 @@ namespace Southxchange.Nxt
             }
         }
 
+        public string GetSecretPhrase(long accountId)
+        {
+            var sql = $"SELECT secret_phrase FROM account WHERE id = {accountId}";
+            using (var dbConnection = OpenNewDbConnection())
+            using (var command = new SQLiteCommand(sql, dbConnection))
+            {
+                var secretPhrase = command.ExecuteScalar().ToString();
+                return secretPhrase;
+            }
+        }
+
+        public ulong GetLastBlockId()
+        {
+            var sql = $"SELECT last_id FROM block";
+            using (var dbConnection = OpenNewDbConnection())
+            using (var command = new SQLiteCommand(sql, dbConnection))
+            {
+                var lastBlockId = (ulong)(long)command.ExecuteScalar();
+                return lastBlockId;
+            }
+        }
+
+        public List<NxtAddress> GetAllDepositAddresses()
+        {
+            const string sql = "SELECT id, address FROM account WHERE main_account = 0";
+            var addresses = new List<NxtAddress>();
+
+            using (var dbConnection = OpenNewDbConnection())
+            using (var command = new SQLiteCommand(sql, dbConnection))
+            using (var reader = command.ExecuteReader())
+            {
+                while (reader.Read())
+                {
+                    var address = new NxtAddress
+                    {
+                        Id = (long)reader["id"],
+                        Address = reader["address"].ToString()
+                    };
+                    addresses.Add(address);
+                }
+            }
+            return addresses;
+        }
+
         public List<NxtAccount> GetAllDepositAccounts()
         {
             var accounts = new List<NxtAccount>();
-            var sql = "SELECT id, secret_phrase, address, public_key, last_block_id, main_account FROM account WHERE main_account = 0";
+            var sql = "SELECT id, secret_phrase, address, main_account FROM account WHERE main_account = 0";
             using (var dbConnection = OpenNewDbConnection())
             using (var command = new SQLiteCommand(sql, dbConnection))
             using (var reader = command.ExecuteReader())
@@ -63,17 +107,14 @@ namespace Southxchange.Nxt
             return accounts;
         }
 
-        public void UpdateLastBlockIds(List<NxtAccount> accounts)
+        public void UpdateLastBlockId(ulong lastBlockId)
         {
             using (var dbConnection = OpenNewDbConnection())
             {
-                foreach (var account in accounts)
+                var sql = $"UPDATE block SET last_id = {(long)lastBlockId}";
+                using (var command = new SQLiteCommand(sql, dbConnection))
                 {
-                    var sql = $"UPDATE account SET last_block_id = {(long)account.LastKnownBlockId} WHERE id = {account.Id}";
-                    using (var command = new SQLiteCommand(sql, dbConnection))
-                    {
-                        command.ExecuteNonQuery();
-                    }
+                    command.ExecuteNonQuery();
                 }
             }
         }
@@ -100,29 +141,40 @@ namespace Southxchange.Nxt
                 Id = (long)reader["id"],
                 IsMainAccount = (long)reader["main_account"] == 1,
                 SecretPhrase = reader["secret_phrase"].ToString(),
-                Address = reader["address"].ToString(),
-                PublicKey = reader["public_key"].ToString(),
-                LastKnownBlockId = (ulong)(long)reader["last_block_id"]
+                Address = reader["address"].ToString()
             };
             return account;
         }
 
-        private void CreateNewWalletFile(NxtAccount mainAccount)
+        private void CreateNewWalletFile(NxtAccount mainAccount, ulong lastBlockId)
         {
-            const string sql = "CREATE TABLE account (id INTEGER PRIMARY KEY, secret_phrase TEXT, address TEXT, public_key TEXT, last_block_id INTEGER, main_account INTEGER)";
 
             using (var dbConnection = OpenNewDbConnection())
-            using (var command = new SQLiteCommand(sql, dbConnection))
             {
-                command.ExecuteNonQuery();
-                AddAccount(mainAccount, dbConnection);
+                const string createAccountSql = "CREATE TABLE account (id INTEGER PRIMARY KEY, secret_phrase TEXT, address TEXT, main_account INTEGER)";
+                using (var command = new SQLiteCommand(createAccountSql, dbConnection))
+                {
+                    command.ExecuteNonQuery();
+                    AddAccount(mainAccount, dbConnection);
+                }
+
+                const string createBlockSql = "CREATE TABLE block (last_id INTEGER)";
+                using (var command = new SQLiteCommand(createBlockSql, dbConnection))
+                {
+                    command.ExecuteNonQuery();
+                }
+                var insertBlockSql = $"INSERT INTO block (last_id) VALUES ({(long)lastBlockId})";
+                using (var command = new SQLiteCommand(insertBlockSql, dbConnection))
+                {
+                    command.ExecuteNonQuery();
+                }
             }
         }
 
         private void AddAccount(NxtAccount account, SQLiteConnection dbConnection)
         {
             var isMainAccount = account.IsMainAccount ? "1" : "0";
-            var sql = $"INSERT INTO account (secret_phrase, address, public_key, last_block_id, main_account) VALUES ('{account.SecretPhrase}', '{account.Address}', '{account.PublicKey}', {(long)account.LastKnownBlockId}, {isMainAccount})";
+            var sql = $"INSERT INTO account (secret_phrase, address, main_account) VALUES ('{account.SecretPhrase}', '{account.Address}', {isMainAccount})";
             using (var command = new SQLiteCommand(sql, dbConnection))
             {
                 command.ExecuteNonQuery();

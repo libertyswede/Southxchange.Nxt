@@ -46,7 +46,8 @@ namespace Southxchange.Nxt
         private readonly NxtLib.ServiceFactory serviceFactory;
         private readonly NxtLib.Amount Fee = NxtLib.Amount.OneNxt;
         private readonly NxtAccount mainAccount;
-        private readonly List<NxtAccount> depositAccounts;
+        private readonly List<NxtAddress> depositAddresses;
+        private ulong lastBlockId;
 
         private Action<string> logger;
         
@@ -62,7 +63,8 @@ namespace Southxchange.Nxt
             walletDb = new NxtWalletDb(walletFilePath, walletKey);
             InitWalletFile();
             mainAccount = walletDb.GetMainAccount();
-            depositAccounts = walletDb.GetAllDepositAccounts();
+            lastBlockId = walletDb.GetLastBlockId();
+            depositAddresses = walletDb.GetAllDepositAddresses();
         }
 
         /// <summary>
@@ -84,7 +86,7 @@ namespace Southxchange.Nxt
 
             var account = GenerateNewAccount();
             walletDb.AddAccount(account);
-            depositAccounts.Add(account);
+            depositAddresses.Add(account);
 
             logger.Invoke($"Done with generating new address, {account.Address}");
             return account.Address;
@@ -203,56 +205,47 @@ namespace Southxchange.Nxt
             var serverInfoService = serviceFactory.CreateServerInfoService();
             var transactions = new List<Transaction>();
             var blockTimes = new Dictionary<ulong, DateTime>();
-            logger.Invoke($"Will check {depositAccounts.Count} accounts for new transactions");
+            logger.Invoke($"Will check {depositAddresses.Count} accounts for new transactions");
 
-            var lastBlock = serverInfoService.GetBlockchainStatus().Result.LastBlockId;
-            foreach (var account in depositAccounts)
+            var addressesSet = new HashSet<string>(depositAddresses.Select(a => a.Address));
+            var height = blockService.GetBlock(BlockLocator.ByBlockId(lastBlockId)).Result.Height;
+            var previousBlockId = lastBlockId;
+            var hasMoreBlocks = true;
+            while (hasMoreBlocks)
             {
-                var done = false;
-                while (!done)
+                height++;
+                NxtLib.Block<NxtLib.Transaction> block = null;
+                try
                 {
-                    DateTime timestamp;
-                    if (!blockTimes.TryGetValue(account.LastKnownBlockId, out timestamp))
-                    {
-                        var block = blockService.GetBlock(BlockLocator.ByBlockId(account.LastKnownBlockId)).Result;
-                        timestamp = block.Timestamp;
-                        blockTimes.Add(account.LastKnownBlockId, timestamp);
-                    }
-
-                    try
-                    {
-                        var nxtTransactions = transactionService.GetBlockchainTransactions(account.Address, timestamp, executedOnly: true,
-                            requireBlock: account.LastKnownBlockId, requireLastBlock: lastBlock).Result;
-
-                        foreach (var nxtTransaction in nxtTransactions.Transactions.Where(t => t.RecipientRs == account.Address))
-                        {
-                            var transaction = new Transaction
-                            {
-                                Address = nxtTransaction.RecipientRs,
-                                Amount = nxtTransaction.Amount.Nxt,
-                                Confirmed = nxtTransaction.Confirmations.HasValue,
-                                Confirmations = nxtTransaction.Confirmations.Value,
-                                TxId = nxtTransaction.TransactionId.ToString()
-                            };
-                            transactions.Add(transaction);
-                        }
-
-                        account.LastKnownBlockId = lastBlock;
-                        done = true;
-                    }
-                    catch (AggregateException ae)
-                    {
-                        ae.Handle(e => 
-                        {
-                            if (e is NxtLib.NxtException && e.Message == "Current last block is different")
-                            {
-                                lastBlock = serverInfoService.GetBlockchainStatus().Result.LastBlockId;
-                                return true;
-                            }
-                            return false;
-                        });
-                    }
+                    block = blockService.GetBlockIncludeTransactions(BlockLocator.ByHeight(height), true, previousBlockId).Result;
                 }
+                catch (AggregateException ae)
+                {
+                    ae.Handle(e =>
+                    {
+                        if (e is NxtLib.NxtException && e.Message == "Incorrect \"height\"")
+                        {
+                            return true;
+                        }
+                        return false;
+                    });
+                    hasMoreBlocks = false;
+                    break;
+                }
+                foreach (var nxtTransaction in block.Transactions.Where(t => addressesSet.Contains(t.RecipientRs) && !t.Phased))
+                {
+                    logger.Invoke($"New incoming transaction ({nxtTransaction.TransactionId}), {nxtTransaction.Amount.Nxt} NXT was sent to {nxtTransaction.RecipientRs}");
+                    var transaction = new Transaction
+                    {
+                        Address = nxtTransaction.RecipientRs,
+                        Amount = nxtTransaction.Amount.Nxt,
+                        Confirmed = nxtTransaction.Confirmations.HasValue,
+                        Confirmations = nxtTransaction.Confirmations.Value,
+                        TxId = nxtTransaction.TransactionId.ToString()
+                    };
+                    transactions.Add(transaction);
+                }
+                previousBlockId = block.BlockId;
             }
 
             if (transactions.Any())
@@ -261,16 +254,18 @@ namespace Southxchange.Nxt
 
                 var transactionsByAddress = transactions.GroupBy(t => t.Address)
                     .ToDictionary(grouping => grouping.Key, grouping => grouping.Sum(t => t.Amount));
-                
+
                 foreach (var transaction in transactionsByAddress)
                 {
-                    var account = depositAccounts.Single(a => a.Address == transaction.Key);
+                    var account = depositAddresses.Single(a => a.Address == transaction.Key);
                     logger.Invoke($"Will internally send {transaction.Value - Fee.Nxt} NXT from {account.Address} (deposit account) to {mainAccount.Address} (main account)");
-                    SendToInternal(mainAccount.Address, transaction.Value, account.SecretPhrase);
+                    var secretPhrase = walletDb.GetSecretPhrase(account.Id);
+                    SendToInternal(mainAccount.Address, transaction.Value, secretPhrase);
                 }
             }
 
-            walletDb.UpdateLastBlockIds(depositAccounts);
+            walletDb.UpdateLastBlockId(previousBlockId);
+            lastBlockId = previousBlockId;
 
             logger.Invoke($"Done with list transactions at {DateTime.Now}");
             return transactions;
@@ -341,9 +336,11 @@ namespace Southxchange.Nxt
         {
             if (!walletDb.FileExists())
             {
+                var serverInfoService = serviceFactory.CreateServerInfoService();
+                var blockchainStatus = serverInfoService.GetBlockchainStatus().Result;
                 var mainAccount = GenerateNewAccount();
                 mainAccount.IsMainAccount = true;
-                walletDb.InitNewDb(mainAccount);
+                walletDb.InitNewDb(mainAccount, blockchainStatus.LastBlockId);
             }
         }
 
@@ -359,8 +356,6 @@ namespace Southxchange.Nxt
             {
                 IsMainAccount = false,
                 Address = accountWithPublicKey.AccountRs,
-                LastKnownBlockId = Constants.GenesisBlockId,
-                PublicKey = accountWithPublicKey.PublicKey.ToString(),
                 SecretPhrase = secretPhrase
             };
 

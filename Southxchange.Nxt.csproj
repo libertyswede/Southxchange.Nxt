@@ -60,6 +60,7 @@
     <Compile Include="IConnector.cs" />
     <Compile Include="Info.cs" />
     <Compile Include="NxtAccount.cs" />
+    <Compile Include="NxtAddress.cs" />
     <Compile Include="NxtConnector.cs" />
     <Compile Include="NxtWalletDb.cs" />
     <Compile Include="Program.cs" />
