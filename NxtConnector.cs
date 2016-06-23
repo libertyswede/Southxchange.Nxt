@@ -309,7 +309,7 @@ namespace Southxchange.Nxt
         /// <returns>True if wallet is encrypted, False otherwise</returns>
         public bool IsEncrypted()
         {
-            throw new NotImplementedException();
+            return walletDb.IsEncrypted();
         }
 
         /// <summary>
@@ -319,7 +319,7 @@ namespace Southxchange.Nxt
         /// <param name="newKey">New key</param>
         public void ChangeKey(string key, string newKey)
         {
-            throw new NotImplementedException();
+            walletDb.ChangeKey(key, newKey);
         }
 
         private void InitWalletFile()

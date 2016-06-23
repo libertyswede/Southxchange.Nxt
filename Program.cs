@@ -34,7 +34,9 @@ namespace Southxchange.Nxt
                 Console.WriteLine("5) Send To");
                 Console.WriteLine("6) Get Transaction Fees");
                 Console.WriteLine("7) Ping");
-                Console.WriteLine("8) Quit");
+                Console.WriteLine("8) Is Encrypted");
+                Console.WriteLine("9) Change Key");
+                Console.WriteLine("10) Quit");
                 Console.Write("> ");
 
                 var value = int.Parse(Console.ReadLine());
@@ -62,6 +64,12 @@ namespace Southxchange.Nxt
                         break;
                     case 7:
                         WritePing();
+                        break;
+                    case 8:
+                        WriteIsEncrypted();
+                        break;
+                    case 9:
+                        WriteChangeKey();
                         break;
                     default:
                         done = true;
@@ -142,6 +150,21 @@ namespace Southxchange.Nxt
             Console.WriteLine("Starting to ping NxtConnector...");
             connector.Ping();
             Console.WriteLine("NxtConnector responded!");
+        }
+
+        private static void WriteIsEncrypted()
+        {
+            var isEncrypted = connector.IsEncrypted();
+            Console.WriteLine($"Is Encrypted: {isEncrypted}");
+        }
+
+        private static void WriteChangeKey()
+        {
+            Console.Write("Enter current key: ");
+            var key = Console.ReadLine();
+            Console.Write("Enter new key: ");
+            var newKey = Console.ReadLine();
+            connector.ChangeKey(key, newKey);
         }
 
         public static void DoLog(string logString)

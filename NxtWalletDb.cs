@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.Data.SQLite;
 using System.IO;
 
@@ -59,8 +60,15 @@ namespace Southxchange.Nxt
 
         public ulong GetLastBlockId()
         {
-            var sql = $"SELECT last_id FROM block";
             using (var dbConnection = OpenNewDbConnection())
+            {
+                return GetLastBlockId(dbConnection);
+            }
+        }
+
+        private ulong GetLastBlockId(SQLiteConnection dbConnection)
+        {
+            var sql = $"SELECT last_id FROM block";
             using (var command = new SQLiteCommand(sql, dbConnection))
             {
                 var lastBlockId = (ulong)(long)command.ExecuteScalar();
@@ -127,9 +135,47 @@ namespace Southxchange.Nxt
             }
         }
 
+        public bool IsEncrypted()
+        {
+            try
+            {
+                using (var dbConnection = OpenNewDbConnection(""))
+                {
+                    var lastBlockId = GetLastBlockId(dbConnection);
+                }
+            }
+            catch (SQLiteException e)
+            {
+                if (e.ResultCode == SQLiteErrorCode.NotADb)
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        public void ChangeKey(string key, string newKey)
+        {
+            if (!string.Equals(key, encryptionKey) && (!string.IsNullOrEmpty(key) || !string.IsNullOrEmpty(encryptionKey)))
+            {
+                throw new ArgumentException("Wrong key", nameof(key));
+            }
+            using (var dbConnection = OpenNewDbConnection())
+            {
+                dbConnection.ChangePassword(newKey);
+                encryptionKey = newKey;
+            }
+        }
+
         private SQLiteConnection OpenNewDbConnection()
         {
-            var dbConnection = new SQLiteConnection($"Data Source={filepath};Version=3;Password={encryptionKey};");
+            return OpenNewDbConnection(encryptionKey);
+        }
+
+        private SQLiteConnection OpenNewDbConnection(string key)
+        {
+            var dbConnection = new SQLiteConnection($"Data Source={filepath};Version=3;");
+            dbConnection.SetPassword(key);
             dbConnection.Open();
             return dbConnection;
         }
