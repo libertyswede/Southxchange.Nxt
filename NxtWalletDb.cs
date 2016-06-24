@@ -34,6 +34,55 @@ namespace Southxchange.Nxt
             CreateNewWalletFile(mainAccount, lastBlockId);
         }
 
+        private void CreateNewWalletFile(NxtAccount mainAccount, ulong lastBlockId)
+        {
+            using (var dbConnection = OpenNewDbConnection())
+            {
+                const string createAccountSql = "CREATE TABLE account (id INTEGER PRIMARY KEY, secret_phrase TEXT, address TEXT, main_account INTEGER)";
+                using (var command = new SQLiteCommand(createAccountSql, dbConnection))
+                {
+                    command.ExecuteNonQuery();
+                    AddAccount(mainAccount, dbConnection);
+                }
+
+                const string createBlockSql = "CREATE TABLE block (last_id INTEGER)";
+                using (var command = new SQLiteCommand(createBlockSql, dbConnection))
+                {
+                    command.ExecuteNonQuery();
+                }
+                var insertBlockSql = $"INSERT INTO block (last_id) VALUES ({(long)lastBlockId})";
+                using (var command = new SQLiteCommand(insertBlockSql, dbConnection))
+                {
+                    command.ExecuteNonQuery();
+                }
+            }
+        }
+
+        private void AddAccount(NxtAccount account, SQLiteConnection dbConnection)
+        {
+            var isMainAccount = account.IsMainAccount ? "1" : "0";
+            var sql = $"INSERT INTO account (secret_phrase, address, main_account) VALUES ('{account.SecretPhrase}', '{account.Address}', {isMainAccount})";
+            using (var command = new SQLiteCommand(sql, dbConnection))
+            {
+                command.ExecuteNonQuery();
+            }
+
+            account.Id = dbConnection.LastInsertRowId;
+        }
+
+        private SQLiteConnection OpenNewDbConnection()
+        {
+            return OpenNewDbConnection(encryptionKey);
+        }
+
+        private SQLiteConnection OpenNewDbConnection(string key)
+        {
+            var dbConnection = new SQLiteConnection($"Data Source={filepath};Version=3;");
+            dbConnection.SetPassword(key);
+            dbConnection.Open();
+            return dbConnection;
+        }
+
         public NxtAccount GetMainAccount()
         {
             var sql = "SELECT id, secret_phrase, address, main_account FROM account WHERE main_account = 1";
@@ -45,6 +94,18 @@ namespace Southxchange.Nxt
                 var account = ParseAccount(reader);
                 return account;
             }
+        }
+
+        private static NxtAccount ParseAccount(SQLiteDataReader reader)
+        {
+            var account = new NxtAccount
+            {
+                Id = (long)reader["id"],
+                IsMainAccount = (long)reader["main_account"] == 1,
+                SecretPhrase = reader["secret_phrase"].ToString(),
+                Address = reader["address"].ToString()
+            };
+            return account;
         }
 
         public string GetSecretPhrase(long accountId)
@@ -170,68 +231,6 @@ namespace Southxchange.Nxt
                 dbConnection.ChangePassword(newKey);
                 encryptionKey = newKey;
             }
-        }
-
-        private SQLiteConnection OpenNewDbConnection()
-        {
-            return OpenNewDbConnection(encryptionKey);
-        }
-
-        private SQLiteConnection OpenNewDbConnection(string key)
-        {
-            var dbConnection = new SQLiteConnection($"Data Source={filepath};Version=3;");
-            dbConnection.SetPassword(key);
-            dbConnection.Open();
-            return dbConnection;
-        }
-
-        private static NxtAccount ParseAccount(SQLiteDataReader reader)
-        {
-            var account = new NxtAccount
-            {
-                Id = (long)reader["id"],
-                IsMainAccount = (long)reader["main_account"] == 1,
-                SecretPhrase = reader["secret_phrase"].ToString(),
-                Address = reader["address"].ToString()
-            };
-            return account;
-        }
-
-        private void CreateNewWalletFile(NxtAccount mainAccount, ulong lastBlockId)
-        {
-
-            using (var dbConnection = OpenNewDbConnection())
-            {
-                const string createAccountSql = "CREATE TABLE account (id INTEGER PRIMARY KEY, secret_phrase TEXT, address TEXT, main_account INTEGER)";
-                using (var command = new SQLiteCommand(createAccountSql, dbConnection))
-                {
-                    command.ExecuteNonQuery();
-                    AddAccount(mainAccount, dbConnection);
-                }
-
-                const string createBlockSql = "CREATE TABLE block (last_id INTEGER)";
-                using (var command = new SQLiteCommand(createBlockSql, dbConnection))
-                {
-                    command.ExecuteNonQuery();
-                }
-                var insertBlockSql = $"INSERT INTO block (last_id) VALUES ({(long)lastBlockId})";
-                using (var command = new SQLiteCommand(insertBlockSql, dbConnection))
-                {
-                    command.ExecuteNonQuery();
-                }
-            }
-        }
-
-        private void AddAccount(NxtAccount account, SQLiteConnection dbConnection)
-        {
-            var isMainAccount = account.IsMainAccount ? "1" : "0";
-            var sql = $"INSERT INTO account (secret_phrase, address, main_account) VALUES ('{account.SecretPhrase}', '{account.Address}', {isMainAccount})";
-            using (var command = new SQLiteCommand(sql, dbConnection))
-            {
-                command.ExecuteNonQuery();
-            }   
-
-            account.Id = dbConnection.LastInsertRowId;
         }
     }
 }
