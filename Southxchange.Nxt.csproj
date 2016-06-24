@@ -38,8 +38,8 @@
       <HintPath>packages\Newtonsoft.Json.8.0.3\lib\net45\Newtonsoft.Json.dll</HintPath>
       <Private>True</Private>
     </Reference>
-    <Reference Include="NxtLib, Version=1.1.14.0, Culture=neutral, processorArchitecture=MSIL">
-      <HintPath>packages\NxtLib.1.1.14\lib\net45\NxtLib.dll</HintPath>
+    <Reference Include="NxtLib, Version=1.1.15.0, Culture=neutral, processorArchitecture=MSIL">
+      <HintPath>packages\NxtLib.1.1.15\lib\net45\NxtLib.dll</HintPath>
       <Private>True</Private>
     </Reference>
     <Reference Include="System" />
